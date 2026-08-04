@@ -216,10 +216,15 @@ class NightGuardAccessibilityService : AccessibilityService() {
             "Screen lock" to "Screen lock settings",
             "Lock screen" to "Screen lock settings",
             "Date and time" to "Date & time settings",
-            // Samsung-specific: Secure Folder is the single most common way to hide
-            // apps/photos on a Galaxy phone, and "Hide apps" hides icons from the app drawer.
-            "Secure Folder" to "Secure Folder settings",
-            "Hide apps" to "Hide-apps setting opened"
+            // Stock-Android hiding mechanisms: Private Space is Google's own hidden,
+            // separately-locked space for apps (Android 15+); "Hide apps" hides icons
+            // from the launcher on both stock Android and most OEM skins.
+            "Private space" to "Private Space settings",
+            "Set up private space" to "Private Space settings",
+            "Hide apps" to "Hide-apps setting opened",
+            // Samsung-specific, harmless no-op on non-Samsung phones: Secure Folder is
+            // the most common way to hide apps/photos on a Galaxy device.
+            "Secure Folder" to "Secure Folder settings"
         )
     }
 }
