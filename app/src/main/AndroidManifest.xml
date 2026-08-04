@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
+    <application
+        android:name=".NightGuardApp"
+        android:allowBackup="false"
+        android:icon="@drawable/ic_shield"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.NightGuard"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.NightGuard">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".service.AppUsageMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".capture.UnlockCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
+
+        <service
+            android:name=".service.NightGuardAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <receiver android:name=".receiver.UnlockReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".receiver.UserSwitchReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.USER_FOREGROUND" />
+                <action android:name="android.intent.action.USER_BACKGROUND" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".receiver.BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
