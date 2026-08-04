@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.nightguard.app.ui.timeline
 
 import android.graphics.BitmapFactory
