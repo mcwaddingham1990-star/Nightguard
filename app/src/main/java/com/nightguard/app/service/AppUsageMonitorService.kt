@@ -14,8 +14,10 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.nightguard.app.MainActivity
 import com.nightguard.app.R
+import com.nightguard.app.capture.UnlockCaptureService
 import com.nightguard.app.data.TimelineRepository
 import com.nightguard.app.data.db.EventType
+import com.nightguard.app.util.PermissionUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,7 +27,10 @@ import kotlinx.coroutines.launch
 
 /**
  * Polls UsageStatsManager for ACTIVITY_RESUMED events and logs each foreground-app
- * switch to the local timeline. Requires the user to have granted Usage Access.
+ * switch to the local timeline. Also acts as NightGuard's watchdog: since this
+ * service is independent of the Accessibility Service, it can notice (and
+ * selfie-flag) someone turning that service off or revoking Usage Access —
+ * the two most direct ways to blind NightGuard from itself.
  */
 class AppUsageMonitorService : Service() {
 
@@ -34,6 +39,9 @@ class AppUsageMonitorService : Service() {
     private lateinit var repo: TimelineRepository
     private var lastQueryEnd = 0L
     private var lastForegroundPackage: String? = null
+    private var lastWatchdogCheck = 0L
+    private var usageAccessWasGranted: Boolean? = null
+    private var accessibilityWasEnabled: Boolean? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -68,8 +76,31 @@ class AppUsageMonitorService : Service() {
                 }
             }
             lastQueryEnd = now
+            checkWatchdog(now)
             delay(POLL_INTERVAL_MS)
         }
+    }
+
+    private suspend fun checkWatchdog(now: Long) {
+        if (now - lastWatchdogCheck < WATCHDOG_INTERVAL_MS) return
+        lastWatchdogCheck = now
+
+        val usageAccessGranted = PermissionUtils.hasUsageAccess(this)
+        if (usageAccessWasGranted == true && !usageAccessGranted) {
+            flagProtectionChange("Usage access permission was turned off for NightGuard")
+        }
+        usageAccessWasGranted = usageAccessGranted
+
+        val accessibilityEnabled = PermissionUtils.isAccessibilityServiceEnabled(this)
+        if (accessibilityWasEnabled == true && !accessibilityEnabled) {
+            flagProtectionChange("NightGuard's accessibility service was turned off")
+        }
+        accessibilityWasEnabled = accessibilityEnabled
+    }
+
+    private suspend fun flagProtectionChange(reason: String) {
+        repo.log(type = EventType.SETTINGS_OR_PERMISSION_ACCESS, detail = reason)
+        UnlockCaptureService.start(this, reason)
     }
 
     private suspend fun logAppForeground(packageName: String, timestamp: Long) {
@@ -112,5 +143,6 @@ class AppUsageMonitorService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val POLL_INTERVAL_MS = 15_000L
         private const val INITIAL_LOOKBACK_MS = 60_000L
+        private const val WATCHDOG_INTERVAL_MS = 15_000L
     }
 }

@@ -4,8 +4,8 @@ A personal Android device-security app. Install it on your own phone to see:
 
 - **App usage timeline** — which app was in the foreground, and when.
 - **Incognito/private-browsing detection** — flags when a known browser shows a private-tab indicator.
-- **Sensitive settings access** — flags when the Accessibility settings, app-permissions screens, device-admin settings, or "special access" screens get opened.
-- **Unlock selfies** — takes a front-camera photo every time the phone is unlocked, so you can see who's been using it.
+- **Sensitive settings access** — logs every Settings screen opened, and specifically flags the ones someone could use to hide activity or weaken NightGuard: accessibility settings, app permissions, usage-access permission, notification access, app info (uninstall/force-stop/clear data), developer options, factory reset, screen-lock changes, date & time, Do Not Disturb, device admin, "install unknown apps."
+- **Selfies on every trigger above** — not just unlock. A front-camera photo is taken whenever the phone is unlocked, *and* whenever one of the sensitive settings screens above is opened, *and* if NightGuard's own Usage Access or Accessibility Service permission gets turned off (its self-defense watchdog, checked independently every ~15s so it isn't blind to its own components being disabled).
 - **User/profile switches** — logs Android multi-user profile switches, if your device has more than one profile configured.
 
 Everything is stored **locally on the device only** (Room database + AES-256-GCM encrypted photos via Jetpack Security). Nothing is uploaded anywhere.

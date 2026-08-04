@@ -3,6 +3,7 @@ package com.nightguard.app.service
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.nightguard.app.capture.UnlockCaptureService
 import com.nightguard.app.data.TimelineRepository
 import com.nightguard.app.data.db.EventType
 import kotlinx.coroutines.CoroutineScope
@@ -11,11 +12,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * Watches window content for two signals other apps can't expose directly:
- * an incognito/private-browsing indicator in known browser apps, and
- * navigation into sensitive Settings screens (accessibility, app permissions,
- * device admin, special access) where someone could grant themselves more
- * control over the phone.
+ * Watches window content for signals other apps can't expose directly: an
+ * incognito/private-browsing indicator in known browser apps, and navigation
+ * into Settings screens someone could use to hide activity or weaken
+ * NightGuard itself (accessibility, app permissions, usage access,
+ * notification access, developer options, factory reset, lock screen,
+ * date/time, app info for uninstall/force-stop). Every Settings screen gets
+ * logged for an audit trail; the sensitive subset also triggers a selfie.
  */
 class NightGuardAccessibilityService : AccessibilityService() {
 
@@ -77,14 +80,19 @@ class NightGuardAccessibilityService : AccessibilityService() {
     }
 
     private fun checkForSensitiveSettingsScreen(packageName: String, className: String) {
-        val isSensitive = SENSITIVE_SETTINGS_CLASSNAMES.any { className.contains(it, ignoreCase = true) }
-        if (isSensitive && lastSettingsClass != className) {
-            lastSettingsClass = className
-            log(
-                EventType.SETTINGS_OR_PERMISSION_ACCESS,
-                packageName,
-                "Sensitive settings screen opened: $className"
-            )
+        if (lastSettingsClass == className) return
+        lastSettingsClass = className
+
+        val sensitiveLabel = SENSITIVE_SETTINGS_CLASSNAMES.entries
+            .firstOrNull { (key, _) -> className.contains(key, ignoreCase = true) }
+            ?.value
+
+        log(EventType.SETTINGS_OR_PERMISSION_ACCESS, packageName, "Settings screen opened: $className")
+
+        if (sensitiveLabel != null) {
+            scope.launch {
+                UnlockCaptureService.start(applicationContext, "Settings screen opened: $sensitiveLabel")
+            }
         }
     }
 
@@ -112,14 +120,33 @@ class NightGuardAccessibilityService : AccessibilityService() {
 
         private val INCOGNITO_KEYWORDS = listOf("incognito", "private tab", "private browsing")
 
-        private val SENSITIVE_SETTINGS_CLASSNAMES = listOf(
-            "AccessibilitySettings",
-            "AccessibilityDetailsSetting",
-            "ManageApplications",
-            "AppPermissionsFragment",
-            "PermissionAppsFragment",
-            "DeviceAdminSettings",
-            "SpecialAccessSettings"
+        // Settings screens that could be used to hide activity or weaken NightGuard's
+        // own ability to watch the device, mapped className-fragment -> human label.
+        // Matched against AOSP fragment class names; OEM skins (Samsung/OnePlus/etc.)
+        // may rename these and will need entries added here.
+        private val SENSITIVE_SETTINGS_CLASSNAMES = linkedMapOf(
+            "AccessibilitySettings" to "Accessibility settings",
+            "AccessibilityDetailsSetting" to "Accessibility service details",
+            "ManageApplications" to "App list / manage apps",
+            "InstalledAppDetails" to "App info (uninstall / force stop / clear data)",
+            "AppPermissionsFragment" to "App permissions",
+            "PermissionAppsFragment" to "App permissions",
+            "AppOpsSummary" to "Special app access",
+            "SpecialAccessSettings" to "Special app access",
+            "UsageAccessSettings" to "Usage access permission",
+            "HighPowerApplicationsFragment" to "Battery optimization exemptions",
+            "NotificationAccessSettings" to "Notification access",
+            "NotificationStation" to "Notification access",
+            "ZenModeSettings" to "Do Not Disturb settings",
+            "DeviceAdminSettings" to "Device admin apps",
+            "DeviceAdminAdd" to "Device admin apps",
+            "ManageAppExternalSourcesActivity" to "Install unknown apps permission",
+            "DevelopmentSettings" to "Developer options",
+            "MasterClear" to "Factory reset",
+            "ChooseLockGeneric" to "Screen lock settings",
+            "ChooseLockPassword" to "Screen lock settings",
+            "ChooseLockPattern" to "Screen lock settings",
+            "DateTimeSettings" to "Date & time settings"
         )
     }
 }

@@ -3,6 +3,7 @@ package com.nightguard.app.capture
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -23,16 +24,22 @@ import kotlinx.coroutines.launch
 
 /**
  * Fires a single front-camera capture whenever it is started, then logs the
- * encrypted photo path to the timeline and stops. Triggered by UnlockReceiver
- * on ACTION_USER_PRESENT.
+ * encrypted photo path to the timeline and stops. Triggered on unlock, on
+ * sensitive Settings screens, and when NightGuard's own permissions get
+ * revoked (see UnlockReceiver, NightGuardAccessibilityService, AppUsageMonitorService).
  */
 class UnlockCaptureService : LifecycleService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var captureReason: String = "Device unlocked"
+    @Volatile private var isCapturing = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         startForeground(NOTIFICATION_ID, buildNotification())
+        if (isCapturing) return START_NOT_STICKY
+        isCapturing = true
+        captureReason = intent?.getStringExtra(EXTRA_REASON) ?: "Device unlocked"
         captureAndStop()
         return START_NOT_STICKY
     }
@@ -62,6 +69,7 @@ class UnlockCaptureService : LifecycleService() {
 
                     override fun onError(exception: ImageCaptureException) {
                         provider.unbindAll()
+                        isCapturing = false
                         stopSelf()
                     }
                 }
@@ -78,10 +86,11 @@ class UnlockCaptureService : LifecycleService() {
 
             TimelineRepository(applicationContext).log(
                 type = EventType.UNLOCK_SELFIE,
-                detail = "Device unlocked",
+                detail = captureReason,
                 photoPath = file.absolutePath,
                 timestamp = timestamp
             )
+            isCapturing = false
             stopSelf()
         }
     }
@@ -110,5 +119,12 @@ class UnlockCaptureService : LifecycleService() {
 
     companion object {
         private const val NOTIFICATION_ID = 1002
+        const val EXTRA_REASON = "reason"
+
+        /** Starts a one-shot front-camera capture, tagging the resulting timeline entry with [reason]. */
+        fun start(context: Context, reason: String) {
+            val intent = Intent(context, UnlockCaptureService::class.java).putExtra(EXTRA_REASON, reason)
+            ContextCompat.startForegroundService(context, intent)
+        }
     }
 }

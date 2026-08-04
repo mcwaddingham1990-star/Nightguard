@@ -104,6 +104,6 @@ private fun titleFor(event: TimelineEvent): String = when (event.type) {
     EventType.APP_FOREGROUND -> "Opened ${event.appLabel ?: event.packageName}"
     EventType.INCOGNITO_DETECTED -> "Incognito/private browsing detected in ${event.appLabel ?: event.packageName}"
     EventType.SETTINGS_OR_PERMISSION_ACCESS -> "Sensitive settings screen opened"
-    EventType.UNLOCK_SELFIE -> "Device unlocked"
+    EventType.UNLOCK_SELFIE -> "Photo captured"
     EventType.USER_SWITCH -> "User/profile switch"
 }
