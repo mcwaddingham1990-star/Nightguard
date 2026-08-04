@@ -54,3 +54,7 @@ This repo was scaffolded without access to the Android SDK/emulator, so it hasn'
 
 - Dependency versions (Compose BOM, AGP, Kotlin, Room, CameraX) were picked for mutual compatibility as of this writing but weren't verified against an actual Gradle sync — Android Studio's upgrade assistant will flag anything stale.
 - `NightGuardAccessibilityService`'s incognito/browser keyword list will need tuning against the actual browsers you use.
+
+### A note on OEM-skinned Settings apps (Samsung One UI, etc.)
+
+Sensitive-settings detection has two layers: matching the screen's internal fragment class name (works on stock-ish Android), and matching the on-screen title/heading text (works regardless of OEM skin, since it reads what's literally displayed). The title list in `SENSITIVE_TITLE_KEYWORDS` was written from general knowledge of Android/One UI screen names, not verified against a physical device — if a screen you'd expect to trigger a selfie doesn't, it's almost certainly a wording mismatch (e.g. Samsung titles a screen slightly differently than guessed) rather than a missing feature. Tell me the exact screen and I'll add the matching string. Samsung's Secure Folder gets special-cased since it's the most common way to hide apps/photos on a Galaxy phone.

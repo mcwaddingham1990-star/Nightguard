@@ -26,7 +26,8 @@ class NightGuardAccessibilityService : AccessibilityService() {
     private lateinit var repo: TimelineRepository
 
     private var lastIncognitoPackage: String? = null
-    private var lastSettingsClass: String? = null
+    private var lastLoggedClassName: String? = null
+    private var lastSensitiveScreenKey: String? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -80,19 +81,59 @@ class NightGuardAccessibilityService : AccessibilityService() {
     }
 
     private fun checkForSensitiveSettingsScreen(packageName: String, className: String) {
-        if (lastSettingsClass == className) return
-        lastSettingsClass = className
+        if (lastLoggedClassName != className) {
+            lastLoggedClassName = className
+            log(EventType.SETTINGS_OR_PERMISSION_ACCESS, packageName, "Settings screen opened: $className")
+        }
 
-        val sensitiveLabel = SENSITIVE_SETTINGS_CLASSNAMES.entries
+        val sensitiveLabel = detectSensitiveLabel(className)
+        if (sensitiveLabel == null) {
+            lastSensitiveScreenKey = null
+            return
+        }
+        if (lastSensitiveScreenKey == sensitiveLabel) return
+        lastSensitiveScreenKey = sensitiveLabel
+        scope.launch {
+            UnlockCaptureService.start(applicationContext, "Settings screen opened: $sensitiveLabel")
+        }
+    }
+
+    /**
+     * Two-layer detection: try the (AOSP-derived) fragment class name first, since it's
+     * cheap and still works on many devices/versions. Fall back to reading the on-screen
+     * title/heading text, which is what actually survives OEM skinning (Samsung One UI and
+     * modern stock Android both route most sub-screens through a single generic host
+     * Activity, so the class name alone often can't tell screens apart).
+     */
+    private fun detectSensitiveLabel(className: String): String? {
+        SENSITIVE_SETTINGS_CLASSNAMES.entries
             .firstOrNull { (key, _) -> className.contains(key, ignoreCase = true) }
-            ?.value
+            ?.let { return it.value }
 
-        log(EventType.SETTINGS_OR_PERMISSION_ACCESS, packageName, "Settings screen opened: $className")
+        val root = rootInActiveWindow ?: return null
+        val texts = mutableListOf<String>()
+        collectTexts(root, texts)
+        root.recycle()
 
-        if (sensitiveLabel != null) {
-            scope.launch {
-                UnlockCaptureService.start(applicationContext, "Settings screen opened: $sensitiveLabel")
-            }
+        SENSITIVE_TITLE_KEYWORDS.entries
+            .firstOrNull { (key, _) -> texts.any { it.equals(key, ignoreCase = true) } }
+            ?.let { return it.value }
+
+        // A per-app "App info" page is titled with the app's own name, so it can't be
+        // matched by a fixed heading string; its "Force stop" button is a reliable proxy.
+        if (texts.any { it.equals("Force stop", ignoreCase = true) }) {
+            return "App info screen (uninstall / force stop / clear data)"
+        }
+        return null
+    }
+
+    private fun collectTexts(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int = 0) {
+        if (depth > 14 || out.size > 60) return
+        node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectTexts(child, out, depth + 1)
+            child.recycle()
         }
     }
 
@@ -147,6 +188,38 @@ class NightGuardAccessibilityService : AccessibilityService() {
             "ChooseLockPassword" to "Screen lock settings",
             "ChooseLockPattern" to "Screen lock settings",
             "DateTimeSettings" to "Date & time settings"
+        )
+
+        // On-screen heading text for the same sensitive screens, matched exactly
+        // (case-insensitive) against the current window's title/heading. This is what
+        // actually catches Samsung One UI and other OEM-skinned Settings apps, where
+        // internal class names no longer map cleanly to visible sub-screens.
+        // Best-effort: exact wording varies by One UI/Android version, so anything that
+        // doesn't fire on your phone is a wording mismatch, not a missing feature.
+        private val SENSITIVE_TITLE_KEYWORDS = linkedMapOf(
+            "Accessibility" to "Accessibility settings",
+            "Installed services" to "Accessibility settings",
+            "Permission manager" to "App permissions",
+            "App permissions" to "App permissions",
+            "Special access" to "Special app access",
+            "Usage access" to "Usage access permission",
+            "Usage data access" to "Usage access permission",
+            "Battery optimization" to "Battery optimization exemptions",
+            "Notification access" to "Notification access",
+            "Do not disturb" to "Do Not Disturb settings",
+            "Device admin apps" to "Device admin apps",
+            "Install unknown apps" to "Install unknown apps permission",
+            "Developer options" to "Developer options",
+            "Reset options" to "Factory reset",
+            "Factory data reset" to "Factory reset",
+            "Screen lock type" to "Screen lock settings",
+            "Screen lock" to "Screen lock settings",
+            "Lock screen" to "Screen lock settings",
+            "Date and time" to "Date & time settings",
+            // Samsung-specific: Secure Folder is the single most common way to hide
+            // apps/photos on a Galaxy phone, and "Hide apps" hides icons from the app drawer.
+            "Secure Folder" to "Secure Folder settings",
+            "Hide apps" to "Hide-apps setting opened"
         )
     }
 }

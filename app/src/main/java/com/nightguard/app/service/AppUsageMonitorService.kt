@@ -116,6 +116,10 @@ class AppUsageMonitorService : Service() {
             appLabel = label,
             timestamp = timestamp
         )
+
+        if (packageName in SENSITIVE_APP_PACKAGES) {
+            UnlockCaptureService.start(this, "Opened $label")
+        }
     }
 
     private fun buildNotification(): Notification {
@@ -144,5 +148,11 @@ class AppUsageMonitorService : Service() {
         private const val POLL_INTERVAL_MS = 15_000L
         private const val INITIAL_LOOKBACK_MS = 60_000L
         private const val WATCHDOG_INTERVAL_MS = 15_000L
+
+        // Opening these apps is itself a hiding mechanism, not just ordinary usage,
+        // so it gets a selfie on top of the normal app-foreground log entry.
+        private val SENSITIVE_APP_PACKAGES = setOf(
+            "com.samsung.knox.securefolder" // Samsung Secure Folder
+        )
     }
 }
