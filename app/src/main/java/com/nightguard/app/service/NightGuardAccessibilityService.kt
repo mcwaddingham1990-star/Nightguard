@@ -41,14 +41,14 @@ class NightGuardAccessibilityService : AccessibilityService() {
         ) return
 
         val packageName = e.packageName?.toString() ?: return
-        val className = e.className?.toString()
 
         if (packageName in KNOWN_BROWSER_PACKAGES) {
             checkForIncognito(packageName)
         }
 
-        if (packageName == SETTINGS_PACKAGE && className != null) {
-            checkForSensitiveSettingsScreen(packageName, className)
+        if (packageName == SETTINGS_PACKAGE) {
+            val isScreenTransition = e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            checkForSensitiveSettingsScreen(packageName, e.className?.toString(), isScreenTransition)
         }
     }
 
@@ -80,8 +80,13 @@ class NightGuardAccessibilityService : AccessibilityService() {
         return false
     }
 
-    private fun checkForSensitiveSettingsScreen(packageName: String, className: String) {
-        if (lastLoggedClassName != className) {
+    private fun checkForSensitiveSettingsScreen(packageName: String, className: String?, isScreenTransition: Boolean) {
+        // Only a real window-state transition reliably reports the screen's own class.
+        // Content-changed events report whatever inner view redrew (ScrollView,
+        // RecyclerView, FrameLayout, ...), which is meaningless as a "screen" and was
+        // flooding the timeline with noise -- so those don't get an audit log entry,
+        // but still feed the title-text scan below in case a screen's content loads in late.
+        if (isScreenTransition && className != null && lastLoggedClassName != className) {
             lastLoggedClassName = className
             log(EventType.SETTINGS_OR_PERMISSION_ACCESS, packageName, "Settings screen opened: $className")
         }
@@ -105,10 +110,12 @@ class NightGuardAccessibilityService : AccessibilityService() {
      * modern stock Android both route most sub-screens through a single generic host
      * Activity, so the class name alone often can't tell screens apart).
      */
-    private fun detectSensitiveLabel(className: String): String? {
-        SENSITIVE_SETTINGS_CLASSNAMES.entries
-            .firstOrNull { (key, _) -> className.contains(key, ignoreCase = true) }
-            ?.let { return it.value }
+    private fun detectSensitiveLabel(className: String?): String? {
+        if (className != null) {
+            SENSITIVE_SETTINGS_CLASSNAMES.entries
+                .firstOrNull { (key, _) -> className.contains(key, ignoreCase = true) }
+                ?.let { return it.value }
+        }
 
         val root = rootInActiveWindow ?: return null
         val texts = mutableListOf<String>()

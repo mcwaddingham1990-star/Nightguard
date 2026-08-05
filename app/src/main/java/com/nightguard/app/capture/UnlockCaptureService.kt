@@ -47,13 +47,14 @@ class UnlockCaptureService : LifecycleService() {
     private fun captureAndStop() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
-            val provider = providerFuture.get()
+            val provider: androidx.camera.lifecycle.ProcessCameraProvider
             val imageCapture = ImageCapture.Builder().build()
             try {
+                provider = providerFuture.get()
                 provider.unbindAll()
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_FRONT_CAMERA, imageCapture)
             } catch (e: Exception) {
-                stopSelf()
+                failAndStop("Photo capture failed to start camera (${e.javaClass.simpleName}): $captureReason")
                 return@addListener
             }
 
@@ -69,12 +70,20 @@ class UnlockCaptureService : LifecycleService() {
 
                     override fun onError(exception: ImageCaptureException) {
                         provider.unbindAll()
-                        isCapturing = false
-                        stopSelf()
+                        failAndStop("Photo capture failed (${exception.imageCaptureError}): $captureReason")
                     }
                 }
             )
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    /** Logs a non-photo entry so a capture failure is visible on the timeline instead of vanishing silently. */
+    private fun failAndStop(reason: String) {
+        scope.launch {
+            TimelineRepository(applicationContext).log(type = EventType.SETTINGS_OR_PERMISSION_ACCESS, detail = reason)
+            isCapturing = false
+            stopSelf()
+        }
     }
 
     private fun persistAndFinish(jpegBytes: ByteArray) {

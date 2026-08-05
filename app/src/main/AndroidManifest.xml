@@ -55,11 +55,10 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <receiver android:name=".receiver.UnlockReceiver" android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.USER_PRESENT" />
-            </intent-filter>
-        </receiver>
+        <!-- UnlockReceiver is registered dynamically at runtime by AppUsageMonitorService,
+             not declared here: ACTION_USER_PRESENT is a protected system broadcast that is
+             only ever delivered to a receiver registered in running code via
+             Context.registerReceiver(), never to one declared in the manifest. -->
 
         <receiver android:name=".receiver.UserSwitchReceiver" android:exported="false">
             <intent-filter>

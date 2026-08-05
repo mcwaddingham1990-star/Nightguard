@@ -9,14 +9,17 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.nightguard.app.MainActivity
 import com.nightguard.app.R
 import com.nightguard.app.capture.UnlockCaptureService
 import com.nightguard.app.data.TimelineRepository
 import com.nightguard.app.data.db.EventType
+import com.nightguard.app.receiver.UnlockReceiver
 import com.nightguard.app.util.PermissionUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,12 +45,22 @@ class AppUsageMonitorService : Service() {
     private var lastWatchdogCheck = 0L
     private var usageAccessWasGranted: Boolean? = null
     private var accessibilityWasEnabled: Boolean? = null
+    private val unlockReceiver = UnlockReceiver()
 
     override fun onCreate() {
         super.onCreate()
         repo = TimelineRepository(applicationContext)
         lastQueryEnd = System.currentTimeMillis() - INITIAL_LOOKBACK_MS
         startForeground(NOTIFICATION_ID, buildNotification())
+        // ACTION_USER_PRESENT is a protected system broadcast that Android only ever
+        // delivers to a dynamically registered receiver, never to one declared in the
+        // manifest -- this service is the always-running place to hold that registration.
+        ContextCompat.registerReceiver(
+            this,
+            unlockReceiver,
+            IntentFilter(Intent.ACTION_USER_PRESENT),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         loopJob = scope.launch { pollLoop() }
     }
 
@@ -57,6 +70,7 @@ class AppUsageMonitorService : Service() {
 
     override fun onDestroy() {
         loopJob?.cancel()
+        unregisterReceiver(unlockReceiver)
         super.onDestroy()
     }
 
