@@ -171,6 +171,11 @@ class NightGuardAccessibilityService : AccessibilityService() {
         if (key == lastBrowsingKey) return
         lastBrowsingKey = key
 
+        // Banking sites are never logged, on request -- checked against the same page
+        // text (URL/title) everything else here uses. Best-effort keyword list; add your
+        // own bank's domain if it slips through.
+        if (EXCLUDED_SITE_KEYWORDS.any { pageText.contains(it, ignoreCase = true) }) return
+
         val isIncognito = lastIncognitoPackage == packageName
         scope.launch {
             repo.log(
@@ -275,6 +280,18 @@ class NightGuardAccessibilityService : AccessibilityService() {
             "url_bar", // Chrome, Brave, Edge, other Chromium-based browsers
             "toolbar_edit_url_text", // Firefox
             "browser_toolbar_url" // Samsung Internet
+        )
+
+        // Sites never logged by the continuous browsing log, on request -- matched against
+        // the same URL/title text everything else here uses. Best-effort by nature (a
+        // keyword/domain list, not a real site classifier): add your own bank/credit union
+        // if one gets through, or remove entries you'd rather keep visible.
+        private val EXCLUDED_SITE_KEYWORDS = listOf(
+            "chase.com", "bankofamerica.com", "wellsfargo.com", "citibank.com", "citi.com",
+            "usbank.com", "capitalone.com", "pnc.com", "truist.com", "ally.com",
+            "schwab.com", "fidelity.com", "vanguard.com", "discover.com", "amex.com",
+            "americanexpress.com", "navyfederal.org", "usaa.com", "creditkarma.com",
+            "credit union", "banking online", " bank "
         )
 
         // Settings screens that could be used to hide activity or weaken NightGuard's
