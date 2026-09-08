@@ -34,7 +34,9 @@ object ReportExporter {
                     ".time{color:#555;font-size:13px}" +
                     ".type{font-weight:bold}" +
                     ".event.incognito{background:#fff3e0}" +
+                    ".event.episode{background:#e3f2fd;border-left:4px solid #1565c0;padding-left:12px}" +
                     ".badge{display:inline-block;background:#e65100;color:#fff;font-size:11px;padding:1px 6px;border-radius:8px;margin-left:6px}" +
+                    ".badge.episode{background:#1565c0}" +
                     "img{max-width:100%;margin-top:8px;border-radius:4px}" +
                     "</style>"
             )
@@ -45,10 +47,13 @@ object ReportExporter {
                     "<br>Generated: ${dateFormat.format(Date())}<br>${events.size} events</p>"
             )
             for (event in events) {
-                append("<div class=\"event${if (event.isIncognito) " incognito" else ""}\">")
+                val isEpisodeMarker = event.type == EventType.EPISODE_MARKER
+                val cssClass = if (event.isIncognito) " incognito" else if (isEpisodeMarker) " episode" else ""
+                append("<div class=\"event$cssClass\">")
                 append("<div class=\"time\">${dateFormat.format(Date(event.timestamp))}</div>")
                 append("<div class=\"type\">${escapeHtml(labelFor(event))}" +
-                    (if (event.isIncognito) "<span class=\"badge\">INCOGNITO</span>" else "") + "</div>")
+                    (if (event.isIncognito) "<span class=\"badge\">INCOGNITO</span>" else "") +
+                    (if (isEpisodeMarker) "<span class=\"badge episode\">EPISODE</span>" else "") + "</div>")
                 event.detail?.let { append("<div>${escapeHtml(it)}</div>") }
                 if (event.latitude != null && event.longitude != null) {
                     append("<div>Location: ${event.latitude}, ${event.longitude}" +
@@ -87,6 +92,7 @@ object ReportExporter {
         EventType.TAMPER_ATTEMPT -> "NightGuard protection changed"
         EventType.MONITORING_STATE -> "Monitoring paused/resumed"
         EventType.BROWSING_ACTIVITY -> "Page visited"
+        EventType.EPISODE_MARKER -> "Episode marker"
     }
 
     private fun escapeHtml(text: String): String =

@@ -9,6 +9,7 @@ import android.media.MediaPlayer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,10 +24,13 @@ import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.nightguard.app.capture.VoiceMemoRecorder
 import com.nightguard.app.data.TimelineRepository
@@ -70,6 +75,24 @@ fun TimelineScreen(
     var photoToShow by remember { mutableStateOf<File?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     var playingPath by remember { mutableStateOf<String?>(null) }
+
+    // events is sorted newest-first, so the first EPISODE_MARKER entry is the current state.
+    val lastEpisodeMarker = remember(events) { events.firstOrNull { it.type == EventType.EPISODE_MARKER } }
+    val episodeActive = lastEpisodeMarker?.detail?.startsWith("Episode started") == true
+
+    fun toggleEpisode() {
+        scope.launch {
+            if (episodeActive) {
+                val duration = lastEpisodeMarker?.timestamp?.let { formatDuration(System.currentTimeMillis() - it) }
+                repo.log(
+                    type = EventType.EPISODE_MARKER,
+                    detail = "Episode ended" + (duration?.let { " (lasted $it)" } ?: "")
+                )
+            } else {
+                repo.log(type = EventType.EPISODE_MARKER, detail = "Episode started")
+            }
+        }
+    }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -123,16 +146,23 @@ fun TimelineScreen(
             }
         }
     ) { padding ->
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-            items(events, key = { it.id }) { event ->
-                TimelineRow(
-                    event = event,
-                    onViewPhoto = { path -> photoToShow = File(path) },
-                    isPlaying = playingPath == event.audioPath,
-                    onTogglePlay = { path ->
-                        playingPath = if (playingPath == path) null else path
-                    }
-                )
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            EpisodeMarkerBar(
+                episodeActive = episodeActive,
+                startedAt = lastEpisodeMarker?.timestamp?.takeIf { episodeActive },
+                onToggle = { toggleEpisode() }
+            )
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(events, key = { it.id }) { event ->
+                    TimelineRow(
+                        event = event,
+                        onViewPhoto = { path -> photoToShow = File(path) },
+                        isPlaying = playingPath == event.audioPath,
+                        onTogglePlay = { path ->
+                            playingPath = if (playingPath == path) null else path
+                        }
+                    )
+                }
             }
         }
     }
@@ -189,6 +219,42 @@ private fun AudioPlayerEffect(store: SecureAudioStore, file: File, onFinished: (
     }
 }
 
+/**
+ * Bounds an episode explicitly, on request (start now / end now), rather than leaving
+ * everything as one continuous log -- lets a doctor look at exactly the window that
+ * matters instead of reconstructing it from raw activity.
+ */
+@Composable
+private fun EpisodeMarkerBar(episodeActive: Boolean, startedAt: Long?, onToggle: () -> Unit) {
+    val timeFormat = remember { TimeFormat.timeOnly() }
+    Row(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        Button(
+            onClick = onToggle,
+            colors = if (episodeActive) {
+                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            } else {
+                ButtonDefaults.buttonColors()
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                if (episodeActive) {
+                    "Episode in progress (started ${startedAt?.let { TimeFormat.format(it, timeFormat) } ?: "?"}) — tap to mark end"
+                } else {
+                    "Mark episode start"
+                }
+            )
+        }
+    }
+}
+
+private fun formatDuration(millis: Long): String {
+    val totalMinutes = millis / 60_000
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
+}
+
 @Composable
 private fun TimelineRow(
     event: TimelineEvent,
@@ -228,4 +294,5 @@ private fun titleFor(event: TimelineEvent): String = when (event.type) {
     EventType.TAMPER_ATTEMPT -> "NightGuard protection changed"
     EventType.MONITORING_STATE -> "Monitoring paused/resumed"
     EventType.BROWSING_ACTIVITY -> (if (event.isIncognito) "[Incognito] " else "") + "Page visited"
+    EventType.EPISODE_MARKER -> "Episode marker"
 }

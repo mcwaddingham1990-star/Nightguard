@@ -23,6 +23,10 @@ Everything is stored **locally on the device only** (Room database + AES-256-GCM
 - **Escalated tamper alerts** — turning off NightGuard's Accessibility Service or Usage Access permission now posts a heads-up (not just a silent log entry) notification immediately, on top of the existing selfie + timeline entry.
 - What this *can't* do: a normal Android app cannot prevent the OS Settings app from revoking its own permissions, force-stopping it, or uninstalling it — that would require enrolling the device under Android's Device Owner/MDM mode, which is a much bigger, more invasive step this app deliberately doesn't take. The mitigations above (backups outside app storage, immediate alerts, an audit trail of the attempt itself) are the realistic version of "hard to disable" within a normal user app.
 
+## Episode markers
+
+A button at the top of the timeline lets you (or whoever's with you) mark when an episode starts and ends, rather than leaving everything as one undifferentiated stream. This is the more clinically useful complement to passive logging: a doctor working from a bounded window ("this happened between 2:14 and 3:40 PM") correlated against what NightGuard already recorded in that window is more actionable than raw continuous logs. Episode markers are highlighted in both the timeline and the doctor report.
+
 ## Doctor-facing report
 
 The report screen (top bar, timeline icon) generates a single self-contained HTML file — event log, photos embedded inline — for a date range you pick, and hands it to the share sheet so you can send it to a clinician or print it. Voice memos are noted in the report but not embedded; play them back in the app.

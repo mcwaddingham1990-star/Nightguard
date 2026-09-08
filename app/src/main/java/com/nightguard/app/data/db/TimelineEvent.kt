@@ -14,7 +14,8 @@ enum class EventType {
     VOICE_MEMO,
     TAMPER_ATTEMPT,
     MONITORING_STATE,
-    BROWSING_ACTIVITY
+    BROWSING_ACTIVITY,
+    EPISODE_MARKER
 }
 
 @Entity(tableName = "timeline_events")
