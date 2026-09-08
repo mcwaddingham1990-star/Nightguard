@@ -18,10 +18,13 @@ import kotlinx.coroutines.launch
  * mode stops the browser from writing history to disk, it doesn't stop
  * anything from being rendered on screen, which is what this reads live),
  * navigation into Settings screens someone could use to hide activity or
- * weaken NightGuard itself, and navigation into a browser's own in-app
+ * weaken NightGuard itself, navigation into a browser's own in-app
  * settings (clear browsing data, sync, site settings, incognito-tab
- * locking). Every Settings screen gets logged for an audit trail; the
- * sensitive subset also triggers a selfie.
+ * locking), and a continuous log of page navigations (URL bar / page
+ * title) in known browsers, tagged with whether incognito was active at
+ * the time. Every Settings screen gets logged for an audit trail; the
+ * sensitive subset also triggers a selfie. Password/secure-entry fields
+ * are never read, in any of the above -- see collectTexts().
  */
 class NightGuardAccessibilityService : AccessibilityService() {
 
@@ -32,6 +35,7 @@ class NightGuardAccessibilityService : AccessibilityService() {
     private var lastLoggedClassName: String? = null
     private var lastSensitiveScreenKey: String? = null
     private var lastBrowserSettingsKey: String? = null
+    private var lastBrowsingKey: String? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -49,6 +53,7 @@ class NightGuardAccessibilityService : AccessibilityService() {
         if (packageName in KNOWN_BROWSER_PACKAGES) {
             checkForIncognito(packageName)
             checkForBrowserSettingsScreen(packageName)
+            checkForPageNavigation(packageName)
         }
 
         if (packageName == SETTINGS_PACKAGE) {
@@ -71,7 +76,7 @@ class NightGuardAccessibilityService : AccessibilityService() {
             lastIncognitoPackage = packageName
             val detail = "Private/incognito browsing indicator detected" +
                 (visibleText?.takeIf { it.isNotBlank() }?.let { " -- visible on screen: $it" } ?: "")
-            log(EventType.INCOGNITO_DETECTED, packageName, detail)
+            log(EventType.INCOGNITO_DETECTED, packageName, detail, isIncognito = true)
             scope.launch { UnlockCaptureService.start(applicationContext, detail) }
         } else if (!hasIncognitoIndicator && lastIncognitoPackage == packageName) {
             lastIncognitoPackage = null
@@ -80,7 +85,7 @@ class NightGuardAccessibilityService : AccessibilityService() {
 
     private fun containsIncognitoText(node: AccessibilityNodeInfo, depth: Int = 0): Boolean {
         if (depth > 12) return false
-        val text = node.text?.toString()?.lowercase()
+        val text = if (node.isPassword) null else node.text?.toString()?.lowercase()
         val desc = node.contentDescription?.toString()?.lowercase()
         if (INCOGNITO_KEYWORDS.any { text?.contains(it) == true || desc?.contains(it) == true }) {
             return true
@@ -144,6 +149,56 @@ class NightGuardAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * A continuous browsing log, not just the incognito-trigger moment: every time the
+     * visible URL/page title changes in a known browser, it gets a timeline entry, tagged
+     * isIncognito when it happened while the incognito indicator was showing for this
+     * package. This deliberately stays scoped to browser page titles/URLs -- it is not a
+     * general on-screen text logger for every app, which would start capturing messages,
+     * banking info, anything else rendered on screen well beyond "which websites."
+     */
+    private fun checkForPageNavigation(packageName: String) {
+        val root = rootInActiveWindow ?: return
+        val urlBarText = findUrlBarText(root)
+        val fallbackTitle = if (urlBarText == null) {
+            val texts = mutableListOf<String>()
+            collectTexts(root, texts, maxDepth = 6)
+            texts.firstOrNull { it.length in 3..120 }
+        } else null
+        root.recycle()
+
+        val pageText = urlBarText ?: fallbackTitle ?: return
+        val key = "$packageName|$pageText"
+        if (key == lastBrowsingKey) return
+        lastBrowsingKey = key
+
+        val isIncognito = lastIncognitoPackage == packageName
+        scope.launch {
+            repo.log(
+                type = EventType.BROWSING_ACTIVITY,
+                packageName = packageName,
+                detail = pageText,
+                isIncognito = isIncognito
+            )
+        }
+    }
+
+    /** Looks for a Chrome/Chromium-style address-bar node by resource id; best-effort across browsers. */
+    private fun findUrlBarText(node: AccessibilityNodeInfo, depth: Int = 0): String? {
+        if (depth > 16) return null
+        val resId = node.viewIdResourceName
+        if (resId != null && URL_BAR_RESOURCE_ID_SUFFIXES.any { resId.endsWith(it) } && !node.isPassword) {
+            node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findUrlBarText(child, depth + 1)
+            child.recycle()
+            if (found != null) return found
+        }
+        return null
+    }
+
+    /**
      * Two-layer detection: try the (AOSP-derived) fragment class name first, since it's
      * cheap and still works on many devices/versions. Fall back to reading the on-screen
      * title/heading text, which is what actually survives OEM skinning (Samsung One UI and
@@ -174,19 +229,23 @@ class NightGuardAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun collectTexts(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int = 0) {
-        if (depth > 14 || out.size > 60) return
-        node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+    private fun collectTexts(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int = 0, maxDepth: Int = 14) {
+        if (depth > maxDepth || out.size > 60) return
+        // Never capture password/secure-entry field content, regardless of what's being
+        // scanned for -- this guard applies everywhere collectTexts is used.
+        if (!node.isPassword) {
+            node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+        }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            collectTexts(child, out, depth + 1)
+            collectTexts(child, out, depth + 1, maxDepth)
             child.recycle()
         }
     }
 
-    private fun log(type: EventType, packageName: String, detail: String) {
+    private fun log(type: EventType, packageName: String, detail: String, isIncognito: Boolean = false) {
         scope.launch {
-            repo.log(type = type, packageName = packageName, detail = detail)
+            repo.log(type = type, packageName = packageName, detail = detail, isIncognito = isIncognito)
         }
     }
 
@@ -207,6 +266,16 @@ class NightGuardAccessibilityService : AccessibilityService() {
         )
 
         private val INCOGNITO_KEYWORDS = listOf("incognito", "private tab", "private browsing")
+
+        // Address-bar view-id suffixes across Chromium-based and other browsers.
+        // Best-effort, same caveat as everywhere else in this file: browsers rename these
+        // between versions, so a browser that never logs page navigations needs its actual
+        // resource id added here.
+        private val URL_BAR_RESOURCE_ID_SUFFIXES = listOf(
+            "url_bar", // Chrome, Brave, Edge, other Chromium-based browsers
+            "toolbar_edit_url_text", // Firefox
+            "browser_toolbar_url" // Samsung Internet
+        )
 
         // Settings screens that could be used to hide activity or weaken NightGuard's
         // own ability to watch the device, mapped className-fragment -> human label.

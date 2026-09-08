@@ -6,9 +6,7 @@ import com.nightguard.app.data.TimelineRepository
 import com.nightguard.app.data.db.EventType
 import com.nightguard.app.data.db.TimelineEvent
 import java.io.File
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /**
  * Builds a single self-contained HTML file (photos embedded as base64 data URIs, so it
@@ -23,7 +21,7 @@ object ReportExporter {
         val repo = TimelineRepository(context)
         val events = repo.eventsBetween(startMillis, endMillis)
         val imageStore = SecureImageStore(context)
-        val dateFormat = SimpleDateFormat("MMM d, yyyy HH:mm:ss", Locale.getDefault())
+        val dateFormat = TimeFormat.dateTime()
 
         val html = buildString {
             append("<!doctype html><html><head><meta charset=\"utf-8\">")
@@ -35,6 +33,8 @@ object ReportExporter {
                     ".event{border-bottom:1px solid #ddd;padding:12px 0}" +
                     ".time{color:#555;font-size:13px}" +
                     ".type{font-weight:bold}" +
+                    ".event.incognito{background:#fff3e0}" +
+                    ".badge{display:inline-block;background:#e65100;color:#fff;font-size:11px;padding:1px 6px;border-radius:8px;margin-left:6px}" +
                     "img{max-width:100%;margin-top:8px;border-radius:4px}" +
                     "</style>"
             )
@@ -45,9 +45,10 @@ object ReportExporter {
                     "<br>Generated: ${dateFormat.format(Date())}<br>${events.size} events</p>"
             )
             for (event in events) {
-                append("<div class=\"event\">")
+                append("<div class=\"event${if (event.isIncognito) " incognito" else ""}\">")
                 append("<div class=\"time\">${dateFormat.format(Date(event.timestamp))}</div>")
-                append("<div class=\"type\">${escapeHtml(labelFor(event))}</div>")
+                append("<div class=\"type\">${escapeHtml(labelFor(event))}" +
+                    (if (event.isIncognito) "<span class=\"badge\">INCOGNITO</span>" else "") + "</div>")
                 event.detail?.let { append("<div>${escapeHtml(it)}</div>") }
                 if (event.latitude != null && event.longitude != null) {
                     append("<div>Location: ${event.latitude}, ${event.longitude}" +
@@ -85,6 +86,7 @@ object ReportExporter {
         EventType.VOICE_MEMO -> "Voice memo"
         EventType.TAMPER_ATTEMPT -> "NightGuard protection changed"
         EventType.MONITORING_STATE -> "Monitoring paused/resumed"
+        EventType.BROWSING_ACTIVITY -> "Page visited"
     }
 
     private fun escapeHtml(text: String): String =

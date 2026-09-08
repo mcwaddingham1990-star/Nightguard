@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Settings
@@ -48,13 +49,17 @@ import com.nightguard.app.data.db.EventType
 import com.nightguard.app.data.db.TimelineEvent
 import com.nightguard.app.util.SecureAudioStore
 import com.nightguard.app.util.SecureImageStore
+import com.nightguard.app.util.TimeFormat
 import kotlinx.coroutines.launch
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 @Composable
-fun TimelineScreen(onOpenSetup: () -> Unit, onOpenReport: () -> Unit, onOpenPause: () -> Unit) {
+fun TimelineScreen(
+    onOpenSetup: () -> Unit,
+    onOpenReport: () -> Unit,
+    onOpenPause: () -> Unit,
+    onOpenBrowsing: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val repo = remember(context) { TimelineRepository(context) }
@@ -94,6 +99,9 @@ fun TimelineScreen(onOpenSetup: () -> Unit, onOpenReport: () -> Unit, onOpenPaus
             TopAppBar(
                 title = { Text("NightGuard timeline") },
                 actions = {
+                    IconButton(onClick = onOpenBrowsing) {
+                        Icon(Icons.Filled.Language, contentDescription = "Browsing log")
+                    }
                     IconButton(onClick = onOpenPause) {
                         Icon(Icons.Filled.PauseCircle, contentDescription = "Pause monitoring")
                     }
@@ -188,11 +196,11 @@ private fun TimelineRow(
     isPlaying: Boolean,
     onTogglePlay: (String) -> Unit
 ) {
-    val timeFormat = remember { SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault()) }
+    val timeFormat = remember { TimeFormat.shortDateTime() }
     ListItem(
         headlineContent = { Text(titleFor(event)) },
         supportingContent = {
-            Text(timeFormat.format(event.timestamp) + (event.detail?.let { " • $it" } ?: ""))
+            Text(TimeFormat.format(event.timestamp, timeFormat) + (event.detail?.let { " • $it" } ?: ""))
         },
         trailingContent = {
             Row {
@@ -219,4 +227,5 @@ private fun titleFor(event: TimelineEvent): String = when (event.type) {
     EventType.VOICE_MEMO -> "Voice memo recorded"
     EventType.TAMPER_ATTEMPT -> "NightGuard protection changed"
     EventType.MONITORING_STATE -> "Monitoring paused/resumed"
+    EventType.BROWSING_ACTIVITY -> (if (event.isIncognito) "[Incognito] " else "") + "Page visited"
 }

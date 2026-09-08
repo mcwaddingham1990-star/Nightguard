@@ -13,7 +13,8 @@ enum class EventType {
     DEVICE_CONNECTION,
     VOICE_MEMO,
     TAMPER_ATTEMPT,
-    MONITORING_STATE
+    MONITORING_STATE,
+    BROWSING_ACTIVITY
 }
 
 @Entity(tableName = "timeline_events")
@@ -28,5 +29,6 @@ data class TimelineEvent(
     val audioPath: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val locationAccuracyMeters: Float? = null
+    val locationAccuracyMeters: Float? = null,
+    val isIncognito: Boolean = false
 )

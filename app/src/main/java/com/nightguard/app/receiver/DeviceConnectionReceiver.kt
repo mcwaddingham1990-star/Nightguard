@@ -17,11 +17,12 @@ import kotlinx.coroutines.launch
 
 /**
  * Logs connections the phone itself makes -- Bluetooth devices it pairs with
- * or connects to, and Wi-Fi networks it joins. This intentionally does not
- * scan for or log other nearby devices/networks that the phone never
- * connects to; that would be about detecting who else is nearby rather than
- * what this device did, which is a different (and much more invasive) kind
- * of monitoring than the rest of NightGuard does.
+ * or connects to, Wi-Fi networks it joins, and (best-effort, see
+ * logTetherStateChange) when this phone's own hotspot/tethering state changes.
+ * This intentionally does not scan for or log other nearby devices/networks
+ * that the phone never connects to; that would be about detecting who else
+ * is nearby rather than what this device did, which is a different (and much
+ * more invasive) kind of monitoring than the rest of NightGuard does.
  */
 class DeviceConnectionReceiver : BroadcastReceiver() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -35,6 +36,7 @@ class DeviceConnectionReceiver : BroadcastReceiver() {
                 if (bondState == BluetoothDevice.BOND_BONDED) logBluetooth(context, intent, "paired")
             }
             WifiManager.NETWORK_STATE_CHANGED_ACTION -> logWifi(context)
+            TETHER_STATE_CHANGED_ACTION -> logTetherStateChange(context)
         }
     }
 
@@ -48,6 +50,25 @@ class DeviceConnectionReceiver : BroadcastReceiver() {
             TimelineRepository(context.applicationContext).log(
                 type = EventType.DEVICE_CONNECTION,
                 detail = "Bluetooth $action: $label"
+            )
+        }
+    }
+
+    /**
+     * Best-effort: TETHER_STATE_CHANGED is an undocumented broadcast (no public
+     * ConnectivityManager constant, extra key names vary/aren't stable across Android
+     * versions), so this only logs "something about tethering changed," not on/off state
+     * or which devices connected. Getting a real per-client device list for this phone's
+     * own hotspot requires the NETWORK_SETTINGS/TETHER_PRIVILEGED permission, which is
+     * signature/system-only and not grantable to a normal installed app -- there's no way
+     * around that from here. Devices *this* phone connects to as a client (including
+     * joining someone else's hotspot) are already covered by logWifi()/logBluetooth() above.
+     */
+    private fun logTetherStateChange(context: Context) {
+        scope.launch {
+            TimelineRepository(context.applicationContext).log(
+                type = EventType.DEVICE_CONNECTION,
+                detail = "Wi-Fi hotspot/tethering state changed on this device"
             )
         }
     }
@@ -68,11 +89,16 @@ class DeviceConnectionReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        // Undocumented but long-stable broadcast action for tethering state changes;
+        // no public ConnectivityManager constant exists for it.
+        private const val TETHER_STATE_CHANGED_ACTION = "android.net.conn.TETHER_STATE_CHANGED"
+
         fun intentFilter(): IntentFilter = IntentFilter().apply {
             addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
             addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
             addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
             addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            addAction(TETHER_STATE_CHANGED_ACTION)
         }
 
         fun register(context: Context, receiver: DeviceConnectionReceiver) {

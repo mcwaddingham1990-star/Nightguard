@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-@Database(entities = [TimelineEvent::class], version = 2, exportSchema = false)
+@Database(entities = [TimelineEvent::class], version = 3, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class NightGuardDatabase : RoomDatabase() {
     abstract fun eventDao(): EventDao

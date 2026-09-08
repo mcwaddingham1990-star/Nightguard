@@ -23,6 +23,7 @@ class TimelineRepository(context: Context) {
         latitude: Double? = null,
         longitude: Double? = null,
         locationAccuracyMeters: Float? = null,
+        isIncognito: Boolean = false,
         timestamp: Long = System.currentTimeMillis()
     ) {
         // A deliberate, PIN-gated pause suppresses routine logging -- but never the two
@@ -43,7 +44,8 @@ class TimelineRepository(context: Context) {
                 audioPath = audioPath,
                 latitude = latitude,
                 longitude = longitude,
-                locationAccuracyMeters = locationAccuracyMeters
+                locationAccuracyMeters = locationAccuracyMeters,
+                isIncognito = isIncognito
             )
         )
     }

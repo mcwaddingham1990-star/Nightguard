@@ -29,9 +29,8 @@ import com.nightguard.app.data.TimelineRepository
 import com.nightguard.app.data.db.EventType
 import com.nightguard.app.util.MonitoringState
 import com.nightguard.app.util.SecurePrefs
+import com.nightguard.app.util.TimeFormat
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 private data class PauseOption(val label: String, val millis: Long)
 
@@ -56,7 +55,7 @@ fun PauseScreen(onDone: () -> Unit) {
     var pausedUntil by remember { mutableLongStateOf(prefs.pausedUntil()) }
     var pinInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val timeFormat = remember { TimeFormat.timeOnly() }
     val isPaused = pausedUntil > System.currentTimeMillis()
 
     Scaffold(
@@ -67,7 +66,7 @@ fun PauseScreen(onDone: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (isPaused) {
-                Text("Monitoring is paused until ${timeFormat.format(pausedUntil)}.")
+                Text("Monitoring is paused until ${TimeFormat.format(pausedUntil, timeFormat)}.")
                 Button(onClick = {
                     prefs.clearPause()
                     pausedUntil = 0L
@@ -104,7 +103,7 @@ fun PauseScreen(onDone: () -> Unit) {
                             scope.launch {
                                 repo.log(
                                     type = EventType.MONITORING_STATE,
-                                    detail = "Monitoring paused for ${option.label}, until ${timeFormat.format(until)}"
+                                    detail = "Monitoring paused for ${option.label}, until ${TimeFormat.format(until, timeFormat)}"
                                 )
                             }
                             onDone()

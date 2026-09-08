@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.nightguard.app.ui.browsing.BrowsingScreen
 import com.nightguard.app.ui.pause.PauseScreen
 import com.nightguard.app.ui.report.ReportScreen
 import com.nightguard.app.ui.setup.SetupScreen
@@ -26,8 +27,12 @@ fun NightGuardNavHost() {
             TimelineScreen(
                 onOpenSetup = { navController.navigate("setup") },
                 onOpenReport = { navController.navigate("report") },
-                onOpenPause = { navController.navigate("pause") }
+                onOpenPause = { navController.navigate("pause") },
+                onOpenBrowsing = { navController.navigate("browsing") }
             )
+        }
+        composable("browsing") {
+            BrowsingScreen()
         }
         composable("report") {
             ReportScreen()
