@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-@Database(entities = [TimelineEvent::class], version = 1, exportSchema = false)
+@Database(entities = [TimelineEvent::class], version = 2, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class NightGuardDatabase : RoomDatabase() {
     abstract fun eventDao(): EventDao
@@ -20,7 +20,12 @@ abstract class NightGuardDatabase : RoomDatabase() {
                     context.applicationContext,
                     NightGuardDatabase::class.java,
                     "nightguard.db"
-                ).build().also { INSTANCE = it }
+                )
+                    // Pre-release app (see README) with no shipped schema to migrate from yet;
+                    // a real migration path should replace this before this ships to a device
+                    // that already has v1 data worth keeping.
+                    .fallbackToDestructiveMigration()
+                    .build().also { INSTANCE = it }
             }
     }
 }

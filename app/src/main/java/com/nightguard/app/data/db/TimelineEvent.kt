@@ -8,7 +8,12 @@ enum class EventType {
     INCOGNITO_DETECTED,
     SETTINGS_OR_PERMISSION_ACCESS,
     UNLOCK_SELFIE,
-    USER_SWITCH
+    USER_SWITCH,
+    LOCATION_LOG,
+    DEVICE_CONNECTION,
+    VOICE_MEMO,
+    TAMPER_ATTEMPT,
+    MONITORING_STATE
 }
 
 @Entity(tableName = "timeline_events")
@@ -19,5 +24,9 @@ data class TimelineEvent(
     val packageName: String? = null,
     val appLabel: String? = null,
     val detail: String? = null,
-    val photoPath: String? = null
+    val photoPath: String? = null,
+    val audioPath: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val locationAccuracyMeters: Float? = null
 )

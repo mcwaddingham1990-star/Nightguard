@@ -19,6 +19,7 @@ import com.nightguard.app.R
 import com.nightguard.app.capture.UnlockCaptureService
 import com.nightguard.app.data.TimelineRepository
 import com.nightguard.app.data.db.EventType
+import com.nightguard.app.receiver.DeviceConnectionReceiver
 import com.nightguard.app.receiver.UnlockReceiver
 import com.nightguard.app.util.PermissionUtils
 import kotlinx.coroutines.CoroutineScope
@@ -46,6 +47,7 @@ class AppUsageMonitorService : Service() {
     private var usageAccessWasGranted: Boolean? = null
     private var accessibilityWasEnabled: Boolean? = null
     private val unlockReceiver = UnlockReceiver()
+    private val deviceConnectionReceiver = DeviceConnectionReceiver()
 
     override fun onCreate() {
         super.onCreate()
@@ -61,6 +63,7 @@ class AppUsageMonitorService : Service() {
             IntentFilter(Intent.ACTION_USER_PRESENT),
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+        DeviceConnectionReceiver.register(this, deviceConnectionReceiver)
         loopJob = scope.launch { pollLoop() }
     }
 
@@ -71,6 +74,7 @@ class AppUsageMonitorService : Service() {
     override fun onDestroy() {
         loopJob?.cancel()
         unregisterReceiver(unlockReceiver)
+        unregisterReceiver(deviceConnectionReceiver)
         super.onDestroy()
     }
 
@@ -113,8 +117,37 @@ class AppUsageMonitorService : Service() {
     }
 
     private suspend fun flagProtectionChange(reason: String) {
-        repo.log(type = EventType.SETTINGS_OR_PERMISSION_ACCESS, detail = reason)
-        UnlockCaptureService.start(this, reason)
+        repo.log(type = EventType.TAMPER_ATTEMPT, detail = reason)
+        UnlockCaptureService.start(this, reason, bypassPause = true)
+        postTamperAlert(reason)
+    }
+
+    /**
+     * Unlike the silent, IMPORTANCE_MIN monitoring notification, a tamper event gets a
+     * heads-up notification: the whole point of the watchdog is to surface a protection
+     * change immediately, not just leave a trail that's only found later.
+     */
+    private fun postTamperAlert(reason: String) {
+        val channelId = "nightguard_tamper"
+        val nm = getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(channelId) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(channelId, "NightGuard tamper alerts", NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+        val openIntent = PendingIntent.getActivity(
+            this, 1, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("NightGuard protection changed")
+            .setContentText(reason)
+            .setSmallIcon(R.drawable.ic_shield)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(TAMPER_NOTIFICATION_ID, notification)
     }
 
     private suspend fun logAppForeground(packageName: String, timestamp: Long) {
@@ -159,6 +192,7 @@ class AppUsageMonitorService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 1001
+        private const val TAMPER_NOTIFICATION_ID = 1004
         private const val POLL_INTERVAL_MS = 15_000L
         private const val INITIAL_LOOKBACK_MS = 60_000L
         private const val WATCHDOG_INTERVAL_MS = 15_000L

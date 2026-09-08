@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.ContextCompat
 import com.nightguard.app.service.AppUsageMonitorService
+import com.nightguard.app.service.LocationMonitorService
 import com.nightguard.app.ui.NightGuardNavHost
 import com.nightguard.app.ui.theme.NightGuardTheme
 import com.nightguard.app.util.PermissionUtils
@@ -25,5 +26,6 @@ class MainActivity : ComponentActivity() {
         if (PermissionUtils.hasUsageAccess(this)) {
             ContextCompat.startForegroundService(this, Intent(this, AppUsageMonitorService::class.java))
         }
+        LocationMonitorService.start(this)
     }
 }

@@ -13,12 +13,15 @@ import kotlinx.coroutines.launch
 
 /**
  * Watches window content for signals other apps can't expose directly: an
- * incognito/private-browsing indicator in known browser apps, and navigation
- * into Settings screens someone could use to hide activity or weaken
- * NightGuard itself (accessibility, app permissions, usage access,
- * notification access, developer options, factory reset, lock screen,
- * date/time, app info for uninstall/force-stop). Every Settings screen gets
- * logged for an audit trail; the sensitive subset also triggers a selfie.
+ * incognito/private-browsing indicator in known browser apps (plus whatever
+ * page title/address-bar text is visible on screen at that moment -- private
+ * mode stops the browser from writing history to disk, it doesn't stop
+ * anything from being rendered on screen, which is what this reads live),
+ * navigation into Settings screens someone could use to hide activity or
+ * weaken NightGuard itself, and navigation into a browser's own in-app
+ * settings (clear browsing data, sync, site settings, incognito-tab
+ * locking). Every Settings screen gets logged for an audit trail; the
+ * sensitive subset also triggers a selfie.
  */
 class NightGuardAccessibilityService : AccessibilityService() {
 
@@ -28,6 +31,7 @@ class NightGuardAccessibilityService : AccessibilityService() {
     private var lastIncognitoPackage: String? = null
     private var lastLoggedClassName: String? = null
     private var lastSensitiveScreenKey: String? = null
+    private var lastBrowserSettingsKey: String? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -44,6 +48,7 @@ class NightGuardAccessibilityService : AccessibilityService() {
 
         if (packageName in KNOWN_BROWSER_PACKAGES) {
             checkForIncognito(packageName)
+            checkForBrowserSettingsScreen(packageName)
         }
 
         if (packageName == SETTINGS_PACKAGE) {
@@ -55,10 +60,19 @@ class NightGuardAccessibilityService : AccessibilityService() {
     private fun checkForIncognito(packageName: String) {
         val root = rootInActiveWindow ?: return
         val hasIncognitoIndicator = containsIncognitoText(root)
+        val visibleText = if (hasIncognitoIndicator) {
+            val texts = mutableListOf<String>()
+            collectTexts(root, texts)
+            texts.distinct().take(8).joinToString(" | ")
+        } else null
         root.recycle()
+
         if (hasIncognitoIndicator && lastIncognitoPackage != packageName) {
             lastIncognitoPackage = packageName
-            log(EventType.INCOGNITO_DETECTED, packageName, "Private/incognito browsing indicator detected")
+            val detail = "Private/incognito browsing indicator detected" +
+                (visibleText?.takeIf { it.isNotBlank() }?.let { " -- visible on screen: $it" } ?: "")
+            log(EventType.INCOGNITO_DETECTED, packageName, detail)
+            scope.launch { UnlockCaptureService.start(applicationContext, detail) }
         } else if (!hasIncognitoIndicator && lastIncognitoPackage == packageName) {
             lastIncognitoPackage = null
         }
@@ -78,6 +92,32 @@ class NightGuardAccessibilityService : AccessibilityService() {
             if (found) return true
         }
         return false
+    }
+
+    /**
+     * A browser's own Settings screen (clear browsing data, sync, site settings, incognito
+     * lock) lives inside the browser app, not com.android.settings, so it needs its own
+     * title-text scan rather than the Settings-package className path below.
+     */
+    private fun checkForBrowserSettingsScreen(packageName: String) {
+        val root = rootInActiveWindow ?: return
+        val texts = mutableListOf<String>()
+        collectTexts(root, texts)
+        root.recycle()
+
+        val match = BROWSER_SETTINGS_TITLE_KEYWORDS.entries
+            .firstOrNull { (key, _) -> texts.any { it.equals(key, ignoreCase = true) } }
+            ?: run { lastBrowserSettingsKey = null; return }
+
+        if (lastBrowserSettingsKey == match.value) return
+        lastBrowserSettingsKey = match.value
+        log(EventType.SETTINGS_OR_PERMISSION_ACCESS, packageName, "Browser settings screen opened: ${match.value}")
+
+        if (match.value in BROWSER_SETTINGS_TRIGGERING_SELFIE) {
+            scope.launch {
+                UnlockCaptureService.start(applicationContext, "Browser settings screen opened: ${match.value}")
+            }
+        }
     }
 
     private fun checkForSensitiveSettingsScreen(packageName: String, className: String?, isScreenTransition: Boolean) {
@@ -232,6 +272,29 @@ class NightGuardAccessibilityService : AccessibilityService() {
             // Samsung-specific, harmless no-op on non-Samsung phones: Secure Folder is
             // the most common way to hide apps/photos on a Galaxy device.
             "Secure Folder" to "Secure Folder settings"
+        )
+
+        // In-app browser settings screens (Chrome-style wording; other Chromium-based
+        // browsers use near-identical labels). Best-effort, same caveat as above: tell
+        // me the exact screen title if one doesn't fire on your browser.
+        private val BROWSER_SETTINGS_TITLE_KEYWORDS = linkedMapOf(
+            "Clear browsing data" to "Clear browsing data",
+            "Privacy and security" to "Privacy and security settings",
+            "Sync and Google services" to "Sync settings",
+            "Site settings" to "Site settings",
+            "Lock incognito tabs when you close Chrome" to "Incognito-tab lock setting",
+            "Passwords" to "Saved passwords",
+            "Password Manager" to "Saved passwords",
+            "Payment methods" to "Saved payment methods",
+            "Addresses and more" to "Saved addresses",
+            "History" to "Browsing history screen"
+        )
+
+        // Subset of the above that's worth a selfie on top of the audit log entry --
+        // the ones that specifically erase or hide evidence of browsing activity.
+        private val BROWSER_SETTINGS_TRIGGERING_SELFIE = setOf(
+            "Clear browsing data",
+            "Incognito-tab lock setting"
         )
     }
 }

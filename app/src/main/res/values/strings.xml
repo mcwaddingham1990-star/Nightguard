@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">NightGuard</string>
-    <string name="accessibility_service_description">Lets NightGuard notice private/incognito browsing and sensitive settings screens so it can log them on your device timeline. Nothing leaves your phone.</string>
+    <string name="accessibility_service_description">Lets NightGuard notice private/incognito browsing, sensitive Settings screens, and a browser\'s own settings (like clearing browsing data) so it can log them on your device timeline. Nothing leaves your phone.</string>
 </resources>

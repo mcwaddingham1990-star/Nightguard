@@ -5,15 +5,29 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Scoped storage applies from API 29; below that, writing the backup/report files
+         out to the public Downloads folder needs this legacy permission instead. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <uses-feature android:name="android.hardware.camera.front" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
 
     <application
         android:name=".NightGuardApp"
@@ -39,6 +53,11 @@
             android:foregroundServiceType="dataSync" />
 
         <service
+            android:name=".service.LocationMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <service
             android:name=".capture.UnlockCaptureService"
             android:exported="false"
             android:foregroundServiceType="camera" />
@@ -55,10 +74,12 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- UnlockReceiver is registered dynamically at runtime by AppUsageMonitorService,
-             not declared here: ACTION_USER_PRESENT is a protected system broadcast that is
-             only ever delivered to a receiver registered in running code via
-             Context.registerReceiver(), never to one declared in the manifest. -->
+        <!-- UnlockReceiver and DeviceConnectionReceiver are registered dynamically at
+             runtime by AppUsageMonitorService, not declared here: several of the actions
+             they listen for (ACTION_USER_PRESENT, Bluetooth ACL connect/disconnect) are
+             protected system broadcasts Android only ever delivers to a receiver
+             registered in running code via Context.registerReceiver(), never to one
+             declared in the manifest. -->
 
         <receiver android:name=".receiver.UserSwitchReceiver" android:exported="false">
             <intent-filter>
@@ -72,6 +93,16 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 </manifest>

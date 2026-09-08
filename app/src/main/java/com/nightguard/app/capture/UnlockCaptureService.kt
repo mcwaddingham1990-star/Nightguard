@@ -16,6 +16,7 @@ import androidx.lifecycle.LifecycleService
 import com.nightguard.app.R
 import com.nightguard.app.data.TimelineRepository
 import com.nightguard.app.data.db.EventType
+import com.nightguard.app.util.MonitoringState
 import com.nightguard.app.util.SecureImageStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -130,8 +131,14 @@ class UnlockCaptureService : LifecycleService() {
         private const val NOTIFICATION_ID = 1002
         const val EXTRA_REASON = "reason"
 
-        /** Starts a one-shot front-camera capture, tagging the resulting timeline entry with [reason]. */
-        fun start(context: Context, reason: String) {
+        /**
+         * Starts a one-shot front-camera capture, tagging the resulting timeline entry with
+         * [reason]. Honors a PIN-gated pause unless [bypassPause] is set -- only the tamper
+         * watchdog (AppUsageMonitorService.flagProtectionChange) should ever pass true, since
+         * that's the one capture path that must never be silenced by a pause.
+         */
+        fun start(context: Context, reason: String, bypassPause: Boolean = false) {
+            if (!bypassPause && MonitoringState.isPaused(context)) return
             val intent = Intent(context, UnlockCaptureService::class.java).putExtra(EXTRA_REASON, reason)
             ContextCompat.startForegroundService(context, intent)
         }

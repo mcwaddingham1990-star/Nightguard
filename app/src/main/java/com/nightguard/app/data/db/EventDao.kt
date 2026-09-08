@@ -16,6 +16,12 @@ interface EventDao {
     @Query("SELECT * FROM timeline_events WHERE type = :type ORDER BY timestamp DESC LIMIT 1")
     suspend fun lastOfType(type: EventType): TimelineEvent?
 
+    @Query("SELECT * FROM timeline_events WHERE timestamp BETWEEN :startMillis AND :endMillis ORDER BY timestamp ASC")
+    suspend fun eventsBetween(startMillis: Long, endMillis: Long): List<TimelineEvent>
+
+    @Query("SELECT * FROM timeline_events WHERE timestamp > :afterMillis ORDER BY timestamp ASC")
+    suspend fun eventsAfter(afterMillis: Long): List<TimelineEvent>
+
     @Query("DELETE FROM timeline_events WHERE timestamp < :beforeMillis")
     suspend fun pruneOlderThan(beforeMillis: Long)
 }
