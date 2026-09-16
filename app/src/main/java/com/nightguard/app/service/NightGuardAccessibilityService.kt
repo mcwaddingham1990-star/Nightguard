@@ -1,6 +1,7 @@
 package com.nightguard.app.service
 
 import android.accessibilityservice.AccessibilityService
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.nightguard.app.capture.UnlockCaptureService
@@ -25,6 +26,17 @@ import kotlinx.coroutines.launch
  * the time. Every Settings screen gets logged for an audit trail; the
  * sensitive subset also triggers a selfie. Password/secure-entry fields
  * are never read, in any of the above -- see collectTexts().
+ *
+ * TYPE_WINDOW_CONTENT_CHANGED fires very frequently (every redraw -- scrolling,
+ * page load, an ad refreshing), so processing it is throttled to at most once per
+ * CONTENT_CHANGE_THROTTLE_MS, and each check does a single tree walk per event
+ * rather than a separate one per concern. An earlier version did three independent
+ * full tree walks per browser content-changed event with no throttling at all,
+ * which was slow enough on a busy webpage that Android flagged this service as
+ * "malfunctioning" and throttled event delivery to it -- silently breaking the
+ * incognito/browsing/settings detection (all accessibility-service-dependent)
+ * while leaving the rest of the app (usage stats, location -- separate services)
+ * running normally. That's the fix here.
  */
 class NightGuardAccessibilityService : AccessibilityService() {
 
@@ -36,6 +48,7 @@ class NightGuardAccessibilityService : AccessibilityService() {
     private var lastSensitiveScreenKey: String? = null
     private var lastBrowserSettingsKey: String? = null
     private var lastBrowsingKey: String? = null
+    private var lastContentChangedProcessedAt = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -44,38 +57,52 @@ class NightGuardAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val e = event ?: return
-        if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            e.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-        ) return
+        val isStateChanged = e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        val isContentChanged = e.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        if (!isStateChanged && !isContentChanged) return
+
+        if (isContentChanged) {
+            val now = SystemClock.uptimeMillis()
+            if (now - lastContentChangedProcessedAt < CONTENT_CHANGE_THROTTLE_MS) return
+            lastContentChangedProcessedAt = now
+        }
 
         val packageName = e.packageName?.toString() ?: return
 
         if (packageName in KNOWN_BROWSER_PACKAGES) {
-            checkForIncognito(packageName)
-            checkForBrowserSettingsScreen(packageName)
-            checkForPageNavigation(packageName)
+            handleBrowserWindow(packageName)
         }
 
         if (packageName == SETTINGS_PACKAGE) {
-            val isScreenTransition = e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-            checkForSensitiveSettingsScreen(packageName, e.className?.toString(), isScreenTransition)
+            checkForSensitiveSettingsScreen(packageName, e.className?.toString(), isStateChanged)
         }
     }
 
-    private fun checkForIncognito(packageName: String) {
+    /**
+     * One root fetch, one tree walk, feeding all three browser-side checks (incognito,
+     * in-browser settings, page navigation) instead of each doing its own -- this is the
+     * consolidation that keeps a single content-changed event cheap.
+     */
+    private fun handleBrowserWindow(packageName: String) {
         val root = rootInActiveWindow ?: return
-        val hasIncognitoIndicator = containsIncognitoText(root)
-        val visibleText = if (hasIncognitoIndicator) {
-            val texts = mutableListOf<String>()
-            collectTexts(root, texts)
-            texts.distinct().take(8).joinToString(" | ")
-        } else null
+        val texts = mutableListOf<String>()
+        collectTexts(root, texts)
+        val urlBarText = findUrlBarText(root)
         root.recycle()
+
+        checkForIncognito(packageName, texts)
+        checkForBrowserSettingsScreen(packageName, texts)
+        checkForPageNavigation(packageName, texts, urlBarText)
+    }
+
+    private fun checkForIncognito(packageName: String, texts: List<String>) {
+        val hasIncognitoIndicator = texts.any { t -> INCOGNITO_KEYWORDS.any { t.contains(it, ignoreCase = true) } }
 
         if (hasIncognitoIndicator && lastIncognitoPackage != packageName) {
             lastIncognitoPackage = packageName
+            val visibleText = texts.distinct().take(8).joinToString(" | ")
             val detail = "Private/incognito browsing indicator detected" +
-                (visibleText?.takeIf { it.isNotBlank() }?.let { " -- visible on screen: $it" } ?: "")
+                (visibleText.takeIf { it.isNotBlank() }?.let { " -- visible on screen: $it" } ?: "")
             log(EventType.INCOGNITO_DETECTED, packageName, detail, isIncognito = true)
             scope.launch { UnlockCaptureService.start(applicationContext, detail) }
         } else if (!hasIncognitoIndicator && lastIncognitoPackage == packageName) {
@@ -83,33 +110,12 @@ class NightGuardAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun containsIncognitoText(node: AccessibilityNodeInfo, depth: Int = 0): Boolean {
-        if (depth > 12) return false
-        val text = if (node.isPassword) null else node.text?.toString()?.lowercase()
-        val desc = node.contentDescription?.toString()?.lowercase()
-        if (INCOGNITO_KEYWORDS.any { text?.contains(it) == true || desc?.contains(it) == true }) {
-            return true
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val found = containsIncognitoText(child, depth + 1)
-            child.recycle()
-            if (found) return true
-        }
-        return false
-    }
-
     /**
      * A browser's own Settings screen (clear browsing data, sync, site settings, incognito
      * lock) lives inside the browser app, not com.android.settings, so it needs its own
      * title-text scan rather than the Settings-package className path below.
      */
-    private fun checkForBrowserSettingsScreen(packageName: String) {
-        val root = rootInActiveWindow ?: return
-        val texts = mutableListOf<String>()
-        collectTexts(root, texts)
-        root.recycle()
-
+    private fun checkForBrowserSettingsScreen(packageName: String, texts: List<String>) {
         val match = BROWSER_SETTINGS_TITLE_KEYWORDS.entries
             .firstOrNull { (key, _) -> texts.any { it.equals(key, ignoreCase = true) } }
             ?: run { lastBrowserSettingsKey = null; return }
@@ -156,16 +162,8 @@ class NightGuardAccessibilityService : AccessibilityService() {
      * general on-screen text logger for every app, which would start capturing messages,
      * banking info, anything else rendered on screen well beyond "which websites."
      */
-    private fun checkForPageNavigation(packageName: String) {
-        val root = rootInActiveWindow ?: return
-        val urlBarText = findUrlBarText(root)
-        val fallbackTitle = if (urlBarText == null) {
-            val texts = mutableListOf<String>()
-            collectTexts(root, texts, maxDepth = 6)
-            texts.firstOrNull { it.length in 3..120 }
-        } else null
-        root.recycle()
-
+    private fun checkForPageNavigation(packageName: String, texts: List<String>, urlBarText: String?) {
+        val fallbackTitle = if (urlBarText == null) texts.firstOrNull { it.length in 3..120 } else null
         val pageText = urlBarText ?: fallbackTitle ?: return
         val key = "$packageName|$pageText"
         if (key == lastBrowsingKey) return
@@ -234,12 +232,18 @@ class NightGuardAccessibilityService : AccessibilityService() {
         return null
     }
 
+    /**
+     * Collects both text and contentDescription in one pass (merged into a single list --
+     * both are just candidate strings for keyword matching, so there's no need to keep them
+     * separate) so callers don't each need their own tree walk to check both.
+     */
     private fun collectTexts(node: AccessibilityNodeInfo, out: MutableList<String>, depth: Int = 0, maxDepth: Int = 14) {
         if (depth > maxDepth || out.size > 60) return
         // Never capture password/secure-entry field content, regardless of what's being
         // scanned for -- this guard applies everywhere collectTexts is used.
         if (!node.isPassword) {
             node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+            node.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
@@ -258,6 +262,7 @@ class NightGuardAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val SETTINGS_PACKAGE = "com.android.settings"
+        private const val CONTENT_CHANGE_THROTTLE_MS = 400L
 
         private val KNOWN_BROWSER_PACKAGES = setOf(
             "com.android.chrome",
