@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -79,7 +80,7 @@ private fun pickDateTime(context: android.content.Context, initialMillis: Long, 
 }
 
 @Composable
-fun ReportScreen() {
+fun ReportScreen(onOpenBackupViewer: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isWorking by remember { mutableStateOf(false) }
@@ -169,6 +170,10 @@ fun ReportScreen() {
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Back up now") }
+
+            TextButton(onClick = onOpenBackupViewer, modifier = Modifier.fillMaxWidth()) {
+                Text("View past backups")
+            }
 
             if (isWorking) CircularProgressIndicator()
             status?.let { Text(it) }

@@ -68,6 +68,7 @@ object BackupExporter {
                     put("latitude", e.latitude)
                     put("longitude", e.longitude)
                     put("locationAccuracyMeters", e.locationAccuracyMeters)
+                    put("isIncognito", e.isIncognito)
                 }
             )
         }

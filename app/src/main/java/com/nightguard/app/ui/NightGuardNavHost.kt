@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.nightguard.app.ui.backupviewer.BackupViewerScreen
 import com.nightguard.app.ui.browsing.BrowsingScreen
 import com.nightguard.app.ui.pause.PauseScreen
 import com.nightguard.app.ui.report.ReportScreen
@@ -35,7 +36,10 @@ fun NightGuardNavHost() {
             BrowsingScreen()
         }
         composable("report") {
-            ReportScreen()
+            ReportScreen(onOpenBackupViewer = { navController.navigate("backupViewer") })
+        }
+        composable("backupViewer") {
+            BackupViewerScreen()
         }
         composable("pause") {
             PauseScreen(onDone = { navController.popBackStack() })
