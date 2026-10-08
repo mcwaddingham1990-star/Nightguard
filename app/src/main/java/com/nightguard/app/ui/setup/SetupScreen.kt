@@ -65,7 +65,7 @@ private val STEPS = listOf(
     ),
     SetupStep(
         title = "Camera",
-        description = "Lets NightGuard take a photo when the device is unlocked.",
+        description = "Lets NightGuard take a photo on incognito browsing, sensitive settings screens, and tamper attempts.",
         isGranted = {
             ContextCompat.checkSelfPermission(it, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         },

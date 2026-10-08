@@ -84,7 +84,7 @@ object ReportExporter {
         EventType.APP_FOREGROUND -> "App opened: ${event.appLabel ?: event.packageName ?: ""}"
         EventType.INCOGNITO_DETECTED -> "Incognito/private browsing detected"
         EventType.SETTINGS_OR_PERMISSION_ACCESS -> "Settings screen opened"
-        EventType.UNLOCK_SELFIE -> "Photo captured"
+        EventType.UNLOCK_SELFIE -> if (event.photoPath != null) "Photo captured" else "Device unlocked"
         EventType.USER_SWITCH -> "User/profile switch"
         EventType.LOCATION_LOG -> "Location logged"
         EventType.DEVICE_CONNECTION -> "Device connection"

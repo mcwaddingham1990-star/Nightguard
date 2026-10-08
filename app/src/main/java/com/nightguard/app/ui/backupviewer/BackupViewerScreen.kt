@@ -212,7 +212,7 @@ private fun labelFor(event: BackupEvent): String = when (event.type) {
     EventType.APP_FOREGROUND -> "Opened ${event.appLabel ?: event.packageName}"
     EventType.INCOGNITO_DETECTED -> "Incognito/private browsing detected in ${event.appLabel ?: event.packageName}"
     EventType.SETTINGS_OR_PERMISSION_ACCESS -> "Sensitive settings screen opened"
-    EventType.UNLOCK_SELFIE -> "Photo captured"
+    EventType.UNLOCK_SELFIE -> if (event.photoFile != null) "Photo captured" else "Device unlocked"
     EventType.USER_SWITCH -> "User/profile switch"
     EventType.LOCATION_LOG -> "Location logged" +
         (event.latitude?.let { lat -> event.longitude?.let { lon -> ": %.5f, %.5f".format(lat, lon) } } ?: "")
